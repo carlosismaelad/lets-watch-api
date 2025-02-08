@@ -21,10 +21,10 @@ export class User {
   password: string;
 
   @CreateDateColumn()
-  createdAt: Date;
+  createdAt: string;
 
   @UpdateDateColumn({ nullable: true })
-  updatedAt?: Date;
+  updatedAt?: string;
 
   @Column({ default: true })
   active: boolean;
