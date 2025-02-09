@@ -1,192 +1,129 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource } from 'typeorm';
 import { User } from '../entities/user.entity';
 import { CreateUserDto } from '../dto/create-user.dto';
 import { UtilsService } from 'src/utils/utils.service';
 import { InjectRepository } from '@nestjs/typeorm';
-import { GenericSimpleResult } from 'src/utils/generic-simple-result.service';
-import { UpdateUserDto } from '../dto/update-user.dto';
-
 @Injectable()
 export class UserRepository {
   constructor(
     @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
     private readonly dataSource: DataSource,
     private readonly utilsService: UtilsService,
-    private readonly result: GenericSimpleResult,
   ) {}
 
-  async create(user: CreateUserDto): Promise<User | GenericSimpleResult> {
-    try {
-      const query = `
-        INSERT INTO users (name, email, password, active, created_at)
+  async create(createUserDto: CreateUserDto): Promise<User | string> {
+    const emailAlreadyInUse = await this.findByEmail(createUserDto.email);
+    if (typeof emailAlreadyInUse != 'string')
+      return 'Email já em uso por outro usuário';
+
+    const query = `
+        INSERT INTO users (name, email, password, active, created_at) 
         VALUES ($1, $2, $3, $4, $5)
         RETURNING *;
+    `;
+
+    const values = [
+      createUserDto.name,
+      createUserDto.email,
+      createUserDto.password,
+      createUserDto.active !== undefined ? createUserDto.active : true,
+      this.utilsService.formatsToBrazilianLocalDateTime(),
+    ];
+
+    const createdUser: User[] = await this.dataSource.query(query, values);
+
+    if (!createdUser || createdUser.length == 0)
+      return 'Não foi possível criar o novo usuário';
+
+    return createdUser[0];
+  }
+
+  async findById(id: string): Promise<User | string> {
+    const query = `SELECT * FROM users WHERE id = $1;`;
+
+    const values = [id];
+
+    const userFound: User[] = await this.dataSource.query(query, values);
+
+    if (!userFound.length) return 'Não foi possível criar o novo usuário';
+    return userFound[0];
+  }
+
+  async findByEmail(email: string): Promise<User | string> {
+    const query = `
+        SELECT * FROM users WHERE email = $1;
       `;
 
-      const values = [
-        user.name,
-        user.email,
-        user.password,
-        user.active,
-        this.utilsService.formatsToBrazilianLocalDateTime(),
-      ];
+    const values = [email];
 
-      const createdUser: User[] = await this.dataSource.query(query, values);
+    const userFound: User[] = await this.dataSource.query(query, values);
 
-      if (!createdUser.length) {
-        this.result.message = 'Não foi possível criar o novo usuário';
-        return this.result;
-      }
-
-      return createdUser[0];
-    } catch (error) {
-      throw new Error(`Erro ao criar usuário: ${(error as Error).message}`);
-    }
+    if (!userFound || userFound.length == 0)
+      return 'Não foi localizar o usuário pelo e-mail informado';
+    return userFound[0];
   }
 
-  async findAllActiveUsers(): Promise<User[]> {
-    try {
-      const query = `SELECT * FROM users WHERE active = true`;
-      const users: User[] = await this.dataSource.query(query);
+  async findAllActiveUsers(): Promise<User[] | string> {
+    const query = `SELECT * FROM users WHERE active = true;`;
 
-      if (!users.length) {
-        this.result.message = `Não foi possível retornar a lista de usuários ativos`;
-        return [];
-      }
+    const activeUsers: User[] = await this.dataSource.query(query);
 
-      const activeUsers = users.map((row) => ({
-        id: row.id,
-        name: row.name,
-        email: row.email,
-        password: row.password,
-        active: row.active,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-      }));
-
-      return activeUsers;
-    } catch (error) {
-      throw new Error(`Erro ao buscar usuário: ${(error as Error).message}`);
-    }
+    if (!activeUsers.length) return [];
+    return activeUsers;
   }
 
-  async findAllUsers(): Promise<User[]> {
-    try {
-      const query = `SELECT * FROM users`;
-      const users: User[] = await this.dataSource.query(query);
+  async findAllUsers(): Promise<User[] | string> {
+    const query = `SELECT * FROM users;`;
 
-      if (!users.length) {
-        this.result.message = `Não foi possível retornar a lista de usuários`;
-        return [];
-      }
+    const users: User[] = await this.dataSource.query(query);
 
-      const allUsers = users.map((row) => ({
-        id: row.id,
-        name: row.name,
-        email: row.email,
-        password: row.password,
-        active: row.active,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-      }));
-
-      return allUsers;
-    } catch (error) {
-      throw new Error(`Erro ao buscar usuário: ${(error as Error).message}`);
-    }
+    if (!users.length) return [];
+    return users;
   }
 
-  async findById(id: string): Promise<User | GenericSimpleResult> {
-    try {
-      const query = `SELECT * FROM users WHERE id = $1 WHERE active = true`;
-      const userExists: User[] = await this.dataSource.query(query, [id]);
+  async update(user: User): Promise<User | string> {
+    const userFound = await this.findById(user.id);
+    if (typeof userFound == 'string' || userFound.active == false)
+      return 'Usuário desativado ou não encontrado para atualização';
 
-      if (!userExists.length) {
-        this.result.message = `Usuário com id ${id} não localizado`;
-      }
-      const row = userExists[0];
+    const otherUser = await this.findByEmail(user.email);
 
-      const user: User = {
-        id: row.id,
-        name: row.name,
-        email: row.email,
-        password: row.password,
-        active: row.active,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-      };
-      return user;
-    } catch (error) {
-      throw new Error(`Erro ao buscar usuário: ${(error as Error).message}`);
-    }
+    if (otherUser && typeof otherUser !== 'string' && otherUser.id != user.id)
+      return 'Esse e-mail já está em uso por outro usuário';
+
+    const query = `UPDATE users SET name = $1, email = $2, password = $3, updated_at = $4 WHERE id = $5 RETURNING *;`;
+
+    const values = [
+      user.name,
+      user.email,
+      user.password,
+      this.utilsService.formatsToBrazilianLocalDateTime(),
+      user.id,
+    ];
+
+    const updatedUser: User[] = await this.dataSource.query(query, values);
+
+    return updatedUser[0];
   }
 
-  async update(
-    id: string,
-    user: Partial<UpdateUserDto>,
-  ): Promise<User | GenericSimpleResult> {
-    try {
-      const query = `
-        UPDATE users
-        SET name = $1, email = $2, password = $3, updated_at = NOW()
-        WHERE id = $4
-        RETURNING *;
-      `;
-
-      const values = [user.name, user.email, user.password, id];
-
-      const updatedUser: User[] = await this.dataSource.query(query, values);
-      if (!updatedUser.length) {
-        this.result.message = 'Não foi possível atualizar o usuário';
-      }
-      return updatedUser[0];
-    } catch (error) {
-      throw new Error(`Erro ao atualizar usuário: ${(error as Error).message}`);
-    }
+  async deactivate(id: string): Promise<string> {
+    const userFound = await this.findById(id);
+    if (typeof userFound != 'string' && userFound.active == false)
+      return 'Usuário já se encontra inativo';
+    const query = `UPDATE users SET updated_at = $1, active = false WHERE id = $2;`;
+    const values = [this.utilsService.formatsToBrazilianLocalDateTime(), id];
+    await this.dataSource.query(query, values);
+    return 'Usuário excluido com sucesso';
   }
 
-  async deactivate(id: string): Promise<GenericSimpleResult> {
-    try {
-      const query = `
-        UPDATE users
-        SET active = false
-        WHERE id = $1
-        RETURNING *;
-      `;
-      const values = [id];
-      const deactivatedUser: User[] = await this.dataSource.query(
-        query,
-        values,
-      );
-      if (!deactivatedUser.length) {
-        this.result.message = 'Não foi possível excluir o usuário';
-      }
-      this.result.success = true;
-      this.result.message = 'Usuário excluído com sucesso';
-      return this.result;
-    } catch (error) {
-      throw new Error(`Erro ao excluir usuário: ${(error as Error).message}`);
-    }
-  }
-
-  async activate(id: string): Promise<User | GenericSimpleResult> {
-    try {
-      const query = `
-        UPDATE users
-        SET active = true
-        WHERE id = $1
-        RETURNING *;
-      `;
-      const values = [id];
-      const activatedUser: User[] = await this.dataSource.query(query, values);
-      if (!activatedUser.length) {
-        this.result.message = 'Não foi possível reativar o usuário';
-      }
-      return activatedUser[0];
-    } catch (error) {
-      throw new Error(`Erro ao ativar usuário: ${(error as Error).message}`);
-    }
+  async activate(id: string): Promise<User | string> {
+    const userFound = await this.findById(id);
+    if (typeof userFound != 'string' && userFound.active == true)
+      return 'Usuário já se encontra ativo';
+    const query = `UPDATE users SET updated_at = $1, active = true WHERE id = $2;`;
+    const values = [this.utilsService.formatsToBrazilianLocalDateTime(), id];
+    await this.dataSource.query(query, values);
+    return 'Usuário ativo com sucesso';
   }
 }
