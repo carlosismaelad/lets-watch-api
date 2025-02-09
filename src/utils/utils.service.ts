@@ -1,18 +1,9 @@
 import { Injectable } from '@nestjs/common';
-
+import { format } from 'date-fns';
 @Injectable()
 export class UtilsService {
   formatsToBrazilianLocalDateTime() {
-    const dateInBrazil = new Intl.DateTimeFormat('pt-BR', {
-      timeZone: 'America/Sao_Paulo',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    }).format(new Date());
-
-    return dateInBrazil;
+    const date = format(new Date(), 'dd/MM/yyyy HH:mm:ss');
+    return date;
   }
 }
