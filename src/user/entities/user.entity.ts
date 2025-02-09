@@ -20,12 +20,12 @@ export class User {
   @Column()
   password: string;
 
-  @CreateDateColumn()
-  createdAt: string;
-
-  @UpdateDateColumn({ nullable: true })
-  updatedAt?: string;
-
   @Column({ default: true })
   active: boolean;
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: string;
+
+  @UpdateDateColumn({ name: 'created_at', nullable: true })
+  updatedAt?: string | null;
 }
