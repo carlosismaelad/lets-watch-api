@@ -9,34 +9,54 @@ import {
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
+import { User } from './entities/user.entity';
+import { ValidateFieldsService } from './validate-fields/validate-fields.service';
 
-@Controller('user')
+@Controller('api/v1/user')
 export class UserController {
-  constructor(private readonly userService: UserService) {}
+  constructor(
+    private readonly userService: UserService,
+    private readonly validations: ValidateFieldsService,
+  ) {}
 
   @Post()
   create(@Body() createUserDto: CreateUserDto) {
-    return this.userService.create(createUserDto);
-  }
-
-  @Get()
-  findAll() {
-    return this.userService.findAll();
+    this.validations.validateFields(createUserDto);
+    return this.userService.createUser(createUserDto);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.userService.findOne(+id);
+  getById(@Param('id') id: string) {
+    return this.userService.findUserById(id);
   }
 
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
-    return this.userService.update(+id, updateUserDto);
+  @Get('by-email')
+  getByEmail(@Body() email: string) {
+    return this.userService.findUserByEmail(email);
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.userService.remove(+id);
+  @Get('all-active-users')
+  getAllActive() {
+    return this.userService.findAllActiveUsers();
+  }
+
+  @Get('all-users')
+  getAll() {
+    return this.userService.findAllUsers();
+  }
+
+  @Patch()
+  update(@Body() user: User) {
+    return this.userService.updateUser(user);
+  }
+
+  @Patch('recover')
+  recover(@Body() body: { id: string }) {
+    return this.userService.recoverUser(body.id);
+  }
+
+  @Delete()
+  remove(@Body() body: { id: string }) {
+    return this.userService.removeUser(body.id);
   }
 }
